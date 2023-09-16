@@ -18,7 +18,7 @@ import {
 } from "https://deno.land/x/lucid@0.10.7/mod.ts";
 // import { Datum } from "https://deno.land/x/lucid@0.10.7/src/core/libs/cardano_multiplatform_lib/cardano_multiplatform_lib.generated.js";
 
-import { listTxInputs, utxoBalance } from "./utils.ts";
+import { listTxInputs, txRecord, utxoBalance } from "./utils.ts";
 
 // Define wallets, balances and Custom network
 
@@ -73,6 +73,13 @@ const validatorAddress: Address = lucid.utils.validatorToAddress(
   validatorScript,
 );
 
+// Define nicknames for known addresses
+const knownAddresses = new Map()
+knownAddresses.set(addressAlice, "Alice")
+knownAddresses.set(addressBob, "Bob")
+knownAddresses.set(validatorAddress, "vault")
+knownAddresses.set(failAddress, "blackhole")
+
 // Helper function to submit a transaction
 async function sendTx(tx): Promise<TxHash> {
   const signedTx = await tx.sign().complete();
@@ -98,16 +105,12 @@ let tx = await lucid.newTx()
     scriptRef: validatorScript,
   }, {})
   .complete();
+console.log("Transaction storing the vault contract in the blackhole (always fail) address:")
+console.log(await txRecord(tx, lucid, knownAddresses))
 await sendTx(tx);
 
 // Make progress in the emulator
 emulator.awaitBlock(4)
-
-console.log("Alice after script send to reference UTxO");
-console.log(await lucid.utxosAt(addressAlice));
-
-console.log("Fail address after script send to reference UTxO");
-console.log(await lucid.utxosAt(failAddress));
 
 // Retrieve the UTxO of the reference script
 const referenceScriptUtxo = (await lucid.utxosAt(failAddress)).find(
@@ -123,21 +126,12 @@ const aliceDatum = Data.to(new Constr(0, [aliceHash]));
 tx = await lucid.newTx()
   .payToContract(validatorAddress, { inline: aliceDatum }, { lovelace: 100_000000n })
   .complete();
+console.log("Transaction where Alice sends 100 ada to the vault:")
+console.log(await txRecord(tx, lucid, knownAddresses))
 await sendTx(tx);
 
 // Make progress in the emulator
 emulator.awaitBlock(4)
-
-console.log("Alice after locking 100 Ada into the vault");
-console.log(await lucid.utxosAt(addressAlice));
-
-console.log("Vault address after locking 100 Ada into the vault");
-console.log(await lucid.utxosAt(validatorAddress));
-
-const knownAddresses = new Map()
-knownAddresses.set(addressAlice, "Alice")
-knownAddresses.set(addressBob, "Bob")
-knownAddresses.set(validatorAddress, "vault")
 
 // Retrieve the UTxO in Alice's vault
 const vaultUtxo = (await lucid.utxosAt(validatorAddress))[0]
@@ -153,7 +147,7 @@ try {
   await sendTx(tx);
   emulator.awaitBlock(4)
 } catch (error) {
-  console.log("Bob's transaction with Alice's vault is invalid, and fails with the error:")
+  console.log("Bob's attempt to retrieve Alice's vault is invalid, and fails with this error:")
   console.log(error)
 }
 
@@ -163,75 +157,11 @@ tx = await lucid.newTx()
   .readFrom([referenceScriptUtxo])
   .collectFrom([vaultUtxo], Data.void()) // collect the 100 Ada in the UTxO ...
   .addSigner(addressAlice)
-  .payToContract(validatorAddress, { inline: aliceDatum }, { lovelace: 50_000000n }); // .. and put 50 back into it
-console.log("The transaction collecting 100 Ada and putting 50 Ada back")
-console.log(tx)
-//  .complete();
-tx = await tx.complete()
-console.log(tx.toString())
-console.log(knownAddresses)
-console.log(await prettyPrintTx(tx))
+  .payToContract(validatorAddress, { inline: aliceDatum }, { lovelace: 50_000000n }) // .. and put 50 back into it
+  .complete()
+console.log("Transaction where Alice retrieves 50 ada of the 100 ada in the vault:")
+console.log(await txRecord(tx, lucid, knownAddresses))
 await sendTx(tx);
 
 // Make progress in the emulator
 emulator.awaitBlock(4)
-
-console.log("Alice after collecting the 100 Ada from the vault and putting 50 back into it");
-console.log(await lucid.utxosAt(addressAlice));
-
-console.log("Vault address after collecting the 100 Ada from the vault and putting 50 back into it");
-console.log(await lucid.utxosAt(validatorAddress));
-
-async function prettyPrintTx(txComplete : TxComplete) {
-  // const txBytes = fromHex(txComplete.toString())
-  // const tx = C.Transaction.from_bytes(txBytes)
-  // return tx.to_json()
-  const tx = txComplete.txComplete   // https://deno.land/x/lucid@0.10.1/mod.ts?s=C.Transaction
-  const txBody = tx.body()           // https://deno.land/x/lucid@0.10.1/mod.ts?s=C.TransactionBody
-  const txInputs = txBody.inputs()   // https://deno.land/x/lucid@0.10.1/mod.ts?s=C.TransactionInputs
-  const txOutputs = txBody.outputs() // https://deno.land/x/lucid@0.10.1/mod.ts?s=C.TransactionOutputs
-  const txFee = txBody.fee()
-  const txRedeemers = tx.witness_set().redeemers()
-
-  // Retrieve the input UTxOs
-  const inputsRefs = listTxInputs(txInputs)
-  const inputUtxos = await lucid.utxosByOutRef(inputsRefs)
-
-  // Check if the UTxOs addresses are known.
-  for (const utxo of inputUtxos) {
-    const fullAddress = utxo.address
-    utxo.knownAddress = knownAddresses.get(fullAddress)
-  }
-
-  // Retrieve reference inputs
-  const refInputs = listTxInputs(txBody.reference_inputs())
-
-  // Retrieve the redeemers
-  const redeemers = []
-  if (txRedeemers) {
-    for (let index = 0; index < txRedeemers.len(); index++) {
-      const redeemer = txRedeemers.get(index)
-      const redeemerIndex = redeemer.index().to_str()
-      const tag = redeemer.tag().kind()
-      const memory = redeemer.ex_units().mem().to_str()
-      const cpu = redeemer.ex_units().steps().to_str()
-      redeemers.push({index: redeemerIndex, tag, memory, cpu})
-    }
-  }
-
-  // Log stuff
-  console.log(inputUtxos)
-  console.log(refInputs)
-  console.log(txBody)
-  console.log(txOutputs.to_js_value())
-  console.log("fee:", txFee.to_str())
-  console.log(redeemers)
-  console.log(utxoBalance(inputUtxos, txOutputs.to_js_value()))
-
-  // TODO:
-  // - associate known addresses with nicknames
-  // - associate known ref inputs contracts with nicknames
-  // - pretty print lovelaces by splitting at Ada level with underscore _
-  // - pretty print string numbers by splitting 3 digits with _
-  // - or pretty print with 3 significative digits human readable like 18.2K or 1.32M
-}

@@ -16,6 +16,72 @@ import {
     fromHex,
 } from "https://deno.land/x/lucid@0.10.7/mod.ts";
 
+
+export async function txRecord(txComplete : TxComplete, provider: any, knownAddresses: any) {
+    const tx = txComplete.txComplete   // https://deno.land/x/lucid@0.10.1/mod.ts?s=C.Transaction
+    const txBody = tx.body()           // https://deno.land/x/lucid@0.10.1/mod.ts?s=C.TransactionBody
+    const txInputs = txBody.inputs()   // https://deno.land/x/lucid@0.10.1/mod.ts?s=C.TransactionInputs
+    const txOutputs = txBody.outputs() // https://deno.land/x/lucid@0.10.1/mod.ts?s=C.TransactionOutputs
+    const txFee = BigInt(txBody.fee().to_str())
+    const txRedeemers = tx.witness_set().redeemers()
+
+    // Retrieve the input and output UTxOs
+    const inputsRefs = listTxInputs(txInputs)
+    const inputUtxos = await provider.utxosByOutRef(inputsRefs)
+    const outputUtxos = txOutputs.to_js_value()
+
+    // Compute the UTxOs balance and replace known addresses by their names
+    const txBalance = utxoBalance(inputUtxos, outputUtxos)
+    const namedBalance = new Map()
+    for (const [address, values] of txBalance) {
+        if (knownAddresses.has(address)) {
+            namedBalance.set(knownAddresses.get(address), values)
+        } else {
+            namedBalance.set(address, values)
+        }
+    }
+
+    // Add a "knownAddress" field to UTxOs
+    for (const utxo of inputUtxos) {
+        utxo.knownAddress = knownAddresses.get(utxo.address)
+    }
+    for (const utxo of outputUtxos) {
+        utxo.knownAddress = knownAddresses.get(utxo.address)
+    }
+
+    // Retrieve reference inputs
+    const refInputs = listTxInputs(txBody.reference_inputs())
+
+    // Retrieve the redeemers
+    const redeemers = []
+    if (txRedeemers) {
+      for (let index = 0; index < txRedeemers.len(); index++) {
+        const redeemer = txRedeemers.get(index)
+        const redeemerIndex = redeemer.index().to_str()
+        const tag = redeemer.tag().kind()
+        const memory = redeemer.ex_units().mem().to_str()
+        const cpu = redeemer.ex_units().steps().to_str()
+        redeemers.push({index: redeemerIndex, tag, memory, cpu})
+      }
+    }
+
+    return {
+        fees: txFee,
+        balance: namedBalance,
+        details: {
+            inputs: inputUtxos,
+            outputs: outputUtxos,
+            referenceInputs: refInputs,
+            redeemers: redeemers,
+        },
+    }
+
+    // TODO:
+    // - associate known ref inputs contracts with nicknames
+    // - pretty print
+}
+
+// Convert a C.TransactionInputs object into a list of {txHash, outputIndex}
 export function listTxInputs(cmlTxInputs: C.TransactionInputs | undefined) {
     const refInputs = []
     if (cmlTxInputs) {
@@ -26,6 +92,7 @@ export function listTxInputs(cmlTxInputs: C.TransactionInputs | undefined) {
     return refInputs
 }
 
+// Compute the balances of input and output UTxOs per address
 export function utxoBalance(inputs: UTxO[], outputs: any) {
     const allBalances = new Map()
     // Remove consumed inputs from balances
