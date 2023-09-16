@@ -134,6 +134,11 @@ console.log(await lucid.utxosAt(addressAlice));
 console.log("Vault address after locking 100 Ada into the vault");
 console.log(await lucid.utxosAt(validatorAddress));
 
+const knownAddresses = new Map()
+knownAddresses.set(addressAlice, "Alice")
+knownAddresses.set(addressBob, "Bob")
+knownAddresses.set(validatorAddress, "vault")
+
 // Retrieve the UTxO in Alice's vault
 const vaultUtxo = (await lucid.utxosAt(validatorAddress))[0]
 
@@ -164,6 +169,7 @@ console.log(tx)
 //  .complete();
 tx = await tx.complete()
 console.log(tx.toString())
+console.log(knownAddresses)
 console.log(await prettyPrintTx(tx))
 await sendTx(tx);
 
@@ -190,6 +196,12 @@ async function prettyPrintTx(txComplete : TxComplete) {
   // Retrieve the input UTxOs
   const inputsRefs = listTxInputs(txInputs)
   const inputUtxos = await lucid.utxosByOutRef(inputsRefs)
+
+  // Check if the UTxOs addresses are known.
+  for (const utxo of inputUtxos) {
+    const fullAddress = utxo.address
+    utxo.knownAddress = knownAddresses.get(fullAddress)
+  }
 
   // Retrieve reference inputs
   const refInputs = listTxInputs(txBody.reference_inputs())
