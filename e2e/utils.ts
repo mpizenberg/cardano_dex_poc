@@ -27,21 +27,35 @@ export function listTxInputs(cmlTxInputs: C.TransactionInputs | undefined) {
 }
 
 export function utxoBalance(inputs: UTxO[], outputs: any) {
-    const balances = new Map()
+    const allBalances = new Map()
     // Remove consumed inputs from balances
     for (const input of inputs) {
         const address = input.address
         for (const [key, value] of Object.entries(input.assets)) {
-            balances.set(`${address},${key}`, (balances.get(`${address},${key}`) || 0n) - value)
+            allBalances.set(`${address},${key}`, (allBalances.get(`${address},${key}`) || 0n) - value)
         }
     }
     // Add outputs to balances
     for (const output of outputs) {
         const address = output.address
         const lovelace = BigInt(output.amount.coin)
-        balances.set(`${address},lovelace`, (balances.get(`${address},lovelace`) || 0n) + lovelace)
+        allBalances.set(`${address},lovelace`, (allBalances.get(`${address},lovelace`) || 0n) + lovelace)
         // TODO: handle other assets than Ada
     }
-    // Return balances
+    // Aggregate balances per address
+    const balances = new Map()
+    for (const [key, value] of allBalances.entries()) {
+        const [address, asset] = key.split(",")
+        appendInHashMap(balances, address, {asset, value})
+    }
     return balances
+}
+
+// Append an element to an array inside the hashmap, even if the key does not exist.
+function appendInHashMap(hashMap, key, element) {
+    if (key in hashMap) {
+        hashMap.get(key).push(element)
+    } else {
+        hashMap.set(key, [element])
+    }
 }
