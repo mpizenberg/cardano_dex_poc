@@ -18,7 +18,7 @@ import {
 } from "https://deno.land/x/lucid@0.10.7/mod.ts";
 // import { Datum } from "https://deno.land/x/lucid@0.10.7/src/core/libs/cardano_multiplatform_lib/cardano_multiplatform_lib.generated.js";
 
-import { listTxInputs } from "./utils.ts";
+import { listTxInputs, utxoBalance } from "./utils.ts";
 
 // Define wallets, balances and Custom network
 
@@ -226,6 +226,7 @@ async function prettyPrintTx(txComplete : TxComplete) {
   console.log(txOutputs.to_js_value())
   console.log("fee:", txFee.to_str())
   console.log(redeemers)
+  console.log(utxoBalance(inputUtxos, txOutputs.to_js_value()))
 
   // TODO:
   // - associate known addresses with nicknames
