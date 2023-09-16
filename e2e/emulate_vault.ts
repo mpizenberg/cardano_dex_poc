@@ -18,6 +18,8 @@ import {
 } from "https://deno.land/x/lucid@0.10.7/mod.ts";
 // import { Datum } from "https://deno.land/x/lucid@0.10.7/src/core/libs/cardano_multiplatform_lib/cardano_multiplatform_lib.generated.js";
 
+import { listTxInputs } from "./utils.ts";
+
 // Define wallets, balances and Custom network
 
 const privateKeyAlice = generatePrivateKey();
@@ -186,22 +188,11 @@ async function prettyPrintTx(txComplete : TxComplete) {
   const txRedeemers = tx.witness_set().redeemers()
 
   // Retrieve the input UTxOs
-  const inputsRefs = []
-  for (const {transaction_id, index} of txInputs.to_js_value()) {
-    console.log("tx_id:", transaction_id)
-    console.log("utxo index:", index)
-    inputsRefs.push({txHash: transaction_id, outputIndex: index})
-  }
+  const inputsRefs = listTxInputs(txInputs)
   const inputUtxos = await lucid.utxosByOutRef(inputsRefs)
 
   // Retrieve reference inputs
-  const refInputs = []
-  const txRefInputs = txBody.reference_inputs()
-  if (txRefInputs) {
-    for (const {transaction_id, index} of txRefInputs.to_js_value()) {
-      refInputs.push({txHash: transaction_id, outputIndex: index})
-    }
-  }
+  const refInputs = listTxInputs(txBody.reference_inputs())
 
   // Retrieve the redeemers
   const redeemers = []
