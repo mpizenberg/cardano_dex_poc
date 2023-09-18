@@ -14,6 +14,7 @@ import {
     C,
     TxComplete,
     fromHex,
+fromUnit,
 } from "https://deno.land/x/lucid@0.10.7/mod.ts";
 
 
@@ -99,7 +100,13 @@ export function utxoBalance(inputs: UTxO[], outputs: any) {
     for (const input of inputs) {
         const address = input.address
         for (const [key, value] of Object.entries(input.assets)) {
-            allBalances.set(`${address},${key}`, (allBalances.get(`${address},${key}`) || 0n) - value)
+            if (key == "lovelace") {
+                allBalances.set(`${address},lovelace`, (allBalances.get(`${address},lovelace`) || 0n) - value)
+            } else {
+                const {policyId, name} = fromUnit(key)
+                const nameUtf8 = new TextDecoder().decode(fromHex(name))
+                allBalances.set(`${address},${nameUtf8}`, (allBalances.get(`${address},${nameUtf8}`) || 0n) - value)
+            }
         }
     }
     // Add outputs to balances
@@ -107,11 +114,18 @@ export function utxoBalance(inputs: UTxO[], outputs: any) {
         const address = output.address
         const lovelace = BigInt(output.amount.coin)
         allBalances.set(`${address},lovelace`, (allBalances.get(`${address},lovelace`) || 0n) + lovelace)
-        // TODO: handle other assets than Ada
+        // Handle other assets than Ada
+        for (const [_policyId, coins] of Object.entries(output.amount.multiasset || [])) {
+            for (const [name, amountStr] of Object.entries(coins)) {
+                const nameUtf8 = new TextDecoder().decode(fromHex(name))
+                const amount = BigInt(amountStr)
+                allBalances.set(`${address},${nameUtf8}`, (allBalances.get(`${address},${nameUtf8}`) || 0n) + amount)
+            }
+        }
     }
     // Aggregate balances per address
     const balances = new Map()
-    for (const [key, value] of allBalances.entries()) {
+    for (const [key, value] of allBalances) {
         const [address, asset] = key.split(",")
         appendInHashMap(balances, address, {asset, value})
     }
@@ -120,7 +134,7 @@ export function utxoBalance(inputs: UTxO[], outputs: any) {
 
 // Append an element to an array inside the hashmap, even if the key does not exist.
 function appendInHashMap(hashMap, key, element) {
-    if (key in hashMap) {
+    if (hashMap.has(key)) {
         hashMap.get(key).push(element)
     } else {
         hashMap.set(key, [element])
