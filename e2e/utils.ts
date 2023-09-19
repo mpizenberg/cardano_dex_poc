@@ -60,6 +60,10 @@ export async function txRecord(txComplete : TxComplete, provider: any, knownAddr
         const redeemer = txRedeemers.get(index)
         const redeemerIndex = redeemer.index().to_str()
         const tag = redeemer.tag().kind()
+        // 0: inputTag "Spend"
+        // 1: mintTag  "Mint"
+        // 2: certTag  "Cert"
+        // 3: wdrlTag  "Reward"
         const memory = redeemer.ex_units().mem().to_str()
         const cpu = redeemer.ex_units().steps().to_str()
         redeemers.push({index: redeemerIndex, tag, memory, cpu})

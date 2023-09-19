@@ -77,8 +77,7 @@ lucid.selectWalletFromPrivateKey(privateKeyAlice)
 //   .paymentCredential?.hash;
 // const aliceDatum = Data.to(new Constr(0, [aliceHash]));
 let tx = await lucid.newTx()
-  .mintAssets({[unit1]: 10n}, Data.void())
-  .mintAssets({[unit2]: 20n}, Data.void())
+  .mintAssets({[unit1]: 10n, [unit2]: 20n}, Data.void())
   .attachMintingPolicy(alwaysMintScript)
   .complete();
 console.log("Transaction where Alice mints 10 PIZADA1 and 20 PIZADA2:")
