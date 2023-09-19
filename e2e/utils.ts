@@ -127,7 +127,9 @@ export function utxoBalance(inputs: UTxO[], outputs: any) {
     const balances = new Map()
     for (const [key, value] of allBalances) {
         const [address, asset] = key.split(",")
-        appendInHashMap(balances, address, {asset, value})
+        if (value != 0) {
+            appendInHashMap(balances, address, {asset, value})
+        }
     }
     return balances
 }
