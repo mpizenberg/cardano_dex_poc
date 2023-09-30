@@ -5,10 +5,13 @@ import {
   Emulator,
   generatePrivateKey,
   Lucid,
-  SpendingValidator,
   TxHash,
   Constr,
   fromText,
+  applyParamsToScript,
+  applyDoubleCborEncoding,
+  MintingPolicy,
+  PolicyId,
 } from "https://deno.land/x/lucid@0.10.7/mod.ts";
 
 import { txRecord } from "./utils.ts";
@@ -39,7 +42,7 @@ const alwaysMintValidator = JSON.parse(await Deno.readTextFile("plutus.json")).v
   (v) => v.title === "mint.always_mint"
 );
 
-const alwaysMintScript: SpendingValidator = {
+const alwaysMintScript: MintingPolicy = {
   type: "PlutusV2",
   script: alwaysMintValidator.compiledCode,
 };
@@ -93,6 +96,52 @@ tx = await lucid.newTx()
   .attachMintingPolicy(alwaysMintScript)
   .complete();
 console.log("Transaction where Alice burns 10 PIZADA1:")
+console.log(await txRecord(tx, lucid, knownAddresses))
+await sendTx(tx);
+
+// Make progress in the emulator
+emulator.awaitBlock(4)
+
+
+// #############################################################################
+// Now emulate mint_once validator
+
+// Pick the required UTxO for the mint_once validator
+// Let's say we pick the one at index 1 of the list (it has more Ada)
+
+const aliceUtxos = await lucid.utxosAt(aliceAddress)
+const requiredUtxo = aliceUtxos[1]
+const requiredUtxoRef = new Constr(0, [
+  new Constr(0, [requiredUtxo.txHash]),
+  BigInt(requiredUtxo.outputIndex),
+]);
+
+// Apply that as the required utxo in the validator parameters
+
+const mintOnceValidator = JSON.parse(await Deno.readTextFile("plutus.json")).validators.find(
+  (v) => v.title === "mint.mint_once"
+);
+
+const appliedMintOnceValidator: string = applyParamsToScript(mintOnceValidator.compiledCode, [requiredUtxoRef])
+
+const appliedMintOncePolicy: MintingPolicy = {
+  type: "PlutusV2",
+  script: applyDoubleCborEncoding(appliedMintOnceValidator),
+}
+
+const appliedMintOncePolicyId: PolicyId = lucid.utils.mintingPolicyToId(appliedMintOncePolicy)
+
+const appliedMintOnceAddress: Address = lucid.utils.validatorToAddress(appliedMintOncePolicy)
+
+knownAddresses.set(appliedMintOnceAddress, "MintOnceContract")
+
+// Mint 42 PIZADA3 once and forever!
+const unit3 = appliedMintOncePolicyId + fromText("PIZADA3")
+tx = await lucid.newTx()
+  .mintAssets({[unit3]: 42n}, Data.void())
+  .attachMintingPolicy(appliedMintOncePolicy)
+  .complete();
+console.log("Transaction where Alice mints 42 PIZADA3:")
 console.log(await txRecord(tx, lucid, knownAddresses))
 await sendTx(tx);
 
