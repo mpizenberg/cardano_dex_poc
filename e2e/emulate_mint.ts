@@ -147,3 +147,18 @@ await sendTx(tx);
 
 // Make progress in the emulator
 emulator.awaitBlock(4)
+
+// If we attempt to mint more PIZADA3, it will fail!
+try {
+  tx = await lucid.newTx()
+    .mintAssets({[unit3]: 42n}, Data.void())
+    .attachMintingPolicy(appliedMintOncePolicy)
+    .complete();
+    console.log("Transaction where Alice mints 42 PIZADA3:")
+    console.log(await txRecord(tx, lucid, knownAddresses))
+    await sendTx(tx);
+    emulator.awaitBlock(4)
+} catch (error) {
+  console.log("Second PIZADA3 mint attempt fails with the following error:")
+  console.log(error)
+}
