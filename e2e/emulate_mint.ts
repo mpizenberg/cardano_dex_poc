@@ -106,11 +106,22 @@ emulator.awaitBlock(4)
 // #############################################################################
 // Now emulate mint_once validator
 
+// Send 100 Ada from Bob to Alice to force creation of another UTxO is Alice wallet
+
+lucid.selectWalletFromPrivateKey(privateKeyBob)
+tx = await lucid.newTx()
+  .payToAddress(aliceAddress, {lovelace: 100_000000n})
+  .complete();
+await sendTx(tx);
+emulator.awaitBlock(4)
+
 // Pick the required UTxO for the mint_once validator
 // Let's say we pick the one at index 1 of the list (it has more Ada)
 
+lucid.selectWalletFromPrivateKey(privateKeyAlice)
 const aliceUtxos = await lucid.utxosAt(aliceAddress)
-const requiredUtxo = aliceUtxos[1]
+console.log("Alice UTxOs:", aliceUtxos)
+const requiredUtxo = aliceUtxos[2]
 const requiredUtxoRef = new Constr(0, [
   new Constr(0, [requiredUtxo.txHash]),
   BigInt(requiredUtxo.outputIndex),
@@ -130,35 +141,24 @@ const appliedMintOncePolicy: MintingPolicy = {
 }
 
 const appliedMintOncePolicyId: PolicyId = lucid.utils.mintingPolicyToId(appliedMintOncePolicy)
+const unit3 = appliedMintOncePolicyId + fromText("PIZADA3")
 
 const appliedMintOnceAddress: Address = lucid.utils.validatorToAddress(appliedMintOncePolicy)
 
 knownAddresses.set(appliedMintOnceAddress, "MintOnceContract")
 
-// Mint 42 PIZADA3 once and forever!
-const unit3 = appliedMintOncePolicyId + fromText("PIZADA3")
-tx = await lucid.newTx()
-  .mintAssets({[unit3]: 42n}, Data.void())
-  .attachMintingPolicy(appliedMintOncePolicy)
-  .complete();
-console.log("Transaction where Alice mints 42 PIZADA3:")
-console.log(await txRecord(tx, lucid, knownAddresses))
-await sendTx(tx);
-
-// Make progress in the emulator
-emulator.awaitBlock(4)
-
-// If we attempt to mint more PIZADA3, it will fail!
+// If we attempt to mint PIZADA3 without the require UTxO as input, it will fail!
+// This has a roughly 50% chance of failing as there are 2 potential inputs to pay for fees.
 try {
   tx = await lucid.newTx()
     .mintAssets({[unit3]: 42n}, Data.void())
     .attachMintingPolicy(appliedMintOncePolicy)
-    .complete();
-    console.log("Transaction where Alice mints 42 PIZADA3:")
-    console.log(await txRecord(tx, lucid, knownAddresses))
-    await sendTx(tx);
-    emulator.awaitBlock(4)
+    .complete()
+  console.log(await txRecord(tx, lucid, knownAddresses))
+  await sendTx(tx);
+  console.log("TX went well, lucid randomly picked the right UTxO input")
+  emulator.awaitBlock(4)
 } catch (error) {
-  console.log("Second PIZADA3 mint attempt fails with the following error:")
+  console.log("TX FAILED, lucid randomly picked the wrong UTxO input")
   console.log(error)
 }
