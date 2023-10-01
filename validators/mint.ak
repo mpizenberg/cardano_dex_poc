@@ -1,7 +1,5 @@
-use aiken/hash.{Blake2b_224, Hash}
 use aiken/list
 use aiken/transaction.{OutputReference, ScriptContext}
-use aiken/transaction/credential.{VerificationKey}
 
 validator {
   fn always_mint(_redeemer: Void, _context: ScriptContext) -> Bool {
