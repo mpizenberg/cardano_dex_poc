@@ -8,8 +8,7 @@ use aiken/transaction/value.{AssetName, PolicyId}
 
 type Datum {
   owner: Hash<Blake2b_224, VerificationKey>,
-  pair: ((PolicyId, AssetName), (PolicyId, AssetName)),
-  swap_rate: (Int, Int),
+  swap_rate: ((PolicyId, AssetName, Int), (PolicyId, AssetName, Int)),
   from_utxo: Option<OutputReference>,
 }
 
@@ -55,9 +54,8 @@ fn valid_liquidity_swap(
   expect InlineDatum(new_inline_datum) = new_utxo.datum
   expect new_utxo_datum: Datum = new_inline_datum
   expect (new_utxo_datum.from_utxo == Some(old_utxo_ref))?
-  // Check the new UTxO still has the same owner, pair and swap price as the old UTxO
+  // Check the new UTxO still has the same owner and swap rate as the old UTxO
   expect (new_utxo_datum.owner == datum.owner)?
-  expect (new_utxo_datum.pair == datum.pair)?
   expect (new_utxo_datum.swap_rate == datum.swap_rate)?
   // Check the swapped assets follow the swap price
   valid_swap_rate(old_utxo, new_utxo, datum)
@@ -65,7 +63,9 @@ fn valid_liquidity_swap(
 
 fn valid_swap_rate(old_utxo: Output, new_utxo: Output, datum: Datum) -> Bool {
   // Extract the expected policy pair
-  let ((policy_1, name_1), (policy_2, name_2)) = datum.pair
+  let ((policy_1, name_1, q1), (policy_2, name_2, q2)) = datum.swap_rate
+  expect (q1 >= 0)?
+  expect (q2 >= 0)?
   // Extract policies and token values from the old and new UTxOs
   expect [
     (old_policy_1, old_name_1, old_value_1),
@@ -87,8 +87,5 @@ fn valid_swap_rate(old_utxo: Output, new_utxo: Output, datum: Datum) -> Bool {
       name_2 == new_name_2,
     }
   // Check that value changes are coherent with the swap rate
-  let (q1, q2) = datum.swap_rate
-  expect (q1 >= 0)?
-  expect (q2 >= 0)?
   ( new_value_1 - old_value_1 ) * q2 >= q1 * ( old_value_2 - new_value_2 )
 }
