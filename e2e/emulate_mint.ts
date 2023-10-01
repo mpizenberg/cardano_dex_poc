@@ -148,17 +148,26 @@ const appliedMintOnceAddress: Address = lucid.utils.validatorToAddress(appliedMi
 knownAddresses.set(appliedMintOnceAddress, "MintOnceContract")
 
 // If we attempt to mint PIZADA3 without the require UTxO as input, it will fail!
-// This has a roughly 50% chance of failing as there are 2 potential inputs to pay for fees.
 try {
   tx = await lucid.newTx()
     .mintAssets({[unit3]: 42n}, Data.void())
     .attachMintingPolicy(appliedMintOncePolicy)
-    .complete()
-  console.log(await txRecord(tx, lucid, knownAddresses))
+    .collectFrom([aliceUtxos[1]]) // provide utxo 1 instead of required utxo 2
+    .complete({coinSelection: false}) // prevent lucid from adding more utxos
   await sendTx(tx);
-  console.log("TX went well, lucid randomly picked the right UTxO input")
   emulator.awaitBlock(4)
 } catch (error) {
-  console.log("TX FAILED, lucid randomly picked the wrong UTxO input")
+  console.log("TX FAILED because the transaction does not include the required input UTxO")
   console.log(error)
 }
+
+// Now if we use the correct required input UTxO, the transaction is valid.
+tx = await lucid.newTx()
+  .mintAssets({[unit3]: 42n}, Data.void())
+  .attachMintingPolicy(appliedMintOncePolicy)
+  .collectFrom([aliceUtxos[2]]) // provide required utxo 2
+  .complete({coinSelection: false}) // prevent lucid from adding more utxos
+console.log("Unique mint of PIZADA3:")
+console.log(await txRecord(tx, lucid, knownAddresses))
+await sendTx(tx);
+emulator.awaitBlock(4)
