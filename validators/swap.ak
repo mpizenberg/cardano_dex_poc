@@ -8,6 +8,7 @@ use aiken/transaction/value.{AssetName, PolicyId}
 
 type Datum {
   owner: Hash<Blake2b_224, VerificationKey>,
+  // TODO: move policies into validator parameterization
   swap_rate: ((PolicyId, AssetName, Int), (PolicyId, AssetName, Int)),
   from_utxo: Option<OutputReference>,
 }
