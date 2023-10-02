@@ -96,10 +96,7 @@ await sendTx(tx);
 emulator.awaitBlock(4)
 
 // #############################################################################
-// Alice deposits 42 PIZADA in liquidity at the price 1 PIZADA = 100 ADA
-
-const aliceHash = lucid.utils.getAddressDetails(aliceAddress)
-  .paymentCredential?.hash;
+// Build the Datum schema
 
 const swapItemSchema = Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Integer()])
 const outputRefSchema = Data.Object({
@@ -114,18 +111,73 @@ const DatumSchema = Data.Object({
 
 type Datum = Data.Static<typeof DatumSchema>
 const Datum = DatumSchema as unknown as Datum
-const datum: Datum = {
+
+// #############################################################################
+// Build the Redeemer schema
+
+const RedeemerSchema = Data.Object({
+  index_input: Data.Integer(),
+  index_output: Data.Integer(),
+})
+
+type Redeemer = Data.Static<typeof RedeemerSchema>
+const Redeemer = RedeemerSchema as unknown as Redeemer
+
+// #############################################################################
+// Alice deposits 42 PIZADA in liquidity at the price 1 PIZADA = 100 ADA
+
+const aliceHash = lucid.utils.getAddressDetails(aliceAddress)
+  .paymentCredential?.hash;
+
+const aliceDatum: Datum = {
   owner: aliceHash!,
   swap_rate: [["", "", 100n], [policyId, fromText("PIZADA"), 1n]], // 1 PIZADA = 100 ADA
-  // from_utxo: {transaction_id: "", output_index: 0n},
   from_utxo: null,
 }
 
 lucid.selectWalletFromPrivateKey(privateKeyAlice)
 tx = await lucid.newTx()
-  .payToContract(liquidityBinAddress, {inline: Data.to(datum, Datum)}, {[unit]: 42n})
+  .payToContract(liquidityBinAddress, {inline: Data.to(aliceDatum, Datum)}, {[unit]: 42n})
   .complete({coinSelection: true})
 console.log("Send 42 PIZADA to the liquidity contract:")
+console.log(await txRecord(tx, lucid, knownAddresses))
+await sendTx(tx);
+emulator.awaitBlock(4)
+
+// #############################################################################
+// Bob swaps 1000 ADA for 10 PIZADA
+
+console.log("UTxOs in the liquidity bin smart contract:");
+const binUtxos = await lucid.utxosAt(liquidityBinAddress)
+console.log(binUtxos);
+const prevUtxoRef = {
+  transaction_id: binUtxos[0].txHash,
+  output_index: BigInt(binUtxos[0].outputIndex),
+};
+
+const bobDatum: Datum = {
+  owner: aliceHash!,
+  swap_rate: [["", "", 100n], [policyId, fromText("PIZADA"), 1n]], // 1 PIZADA = 100 ADA
+  from_utxo: prevUtxoRef, // Link to previous liquidity bin
+}
+
+const bobRedeemer: Redeemer = {
+  index_input: 0n, // The collected UTxO from the bin should be the first input
+  index_output: 0n, // The returned UTxO to the bin should be the first output
+}
+
+const newBinLiquidity = {
+  lovelace: 0n + 1000n, // There was 0 ADA previously
+  [unit]: 42n - 10n,    // There was 42 PIZADA previously
+}
+
+lucid.selectWalletFromPrivateKey(privateKeyBob)
+tx = await lucid.newTx()
+  .collectFrom([binUtxos[0]], Data.to(bobRedeemer, Redeemer))
+  .attachSpendingValidator(liquidityBinScript)
+  .payToContract(liquidityBinAddress, {inline: Data.to(bobDatum, Datum)}, newBinLiquidity)
+  .complete({coinSelection: true})
+console.log("Bob swaps 1000 ADA for 10 PIZADA:")
 console.log(await txRecord(tx, lucid, knownAddresses))
 await sendTx(tx);
 emulator.awaitBlock(4)
