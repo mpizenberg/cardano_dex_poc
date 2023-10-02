@@ -58,7 +58,7 @@ const unit = policyId + fromText("PIZADA");
 // Load the liquidity bin smart contract
 
 const liquidityBinValidator = JSON.parse(await Deno.readTextFile("plutus.json")).validators.find(
-  (v) => v.title === "mint.always_mint"
+  (v) => v.title === "swap.liquidity_bin"
 );
 
 const liquidityBinScript: SpendingValidator = {
