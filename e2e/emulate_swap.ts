@@ -155,14 +155,27 @@ const prevUtxoRef = {
   output_index: BigInt(binUtxos[0].outputIndex),
 };
 
+console.log("Bob UTxOs:");
+const bobUtxos = await lucid.utxosAt(bobAddress)
+console.log(bobUtxos)
+
 const bobDatum: Datum = {
   owner: aliceHash!,
   swap_rate: [["", "", 100n], [policyId, fromText("PIZADA"), 1n]], // 1 PIZADA = 100 ADA
   from_utxo: prevUtxoRef, // Link to previous liquidity bin
 }
 
+// Figure out at which index will be the liquidity bin utxo.
+// Input utxo are sorted in a transaction so let's sort all the input utxos.
+const inputUtxos = [binUtxos[0], bobUtxos[0]]
+inputUtxos.sort((utxo1, utxo2) => 
+  utxo1.txHash.localeCompare(utxo2.txHash) + (utxo1.outputIndex - utxo2.outputIndex) / inputUtxos.length
+)
+const binInputIndex = inputUtxos.findIndex((u) => u === binUtxos[0])
+console.log("binInputIndex:", binInputIndex)
+
 const bobRedeemer: Redeemer = {
-  index_input: 0n, // The collected UTxO from the bin should be the first input
+  index_input: BigInt(binInputIndex),
   index_output: 0n, // The returned UTxO to the bin should be the first output
 }
 
@@ -171,13 +184,21 @@ const newBinLiquidity = {
   [unit]: 42n - 10n,    // There was 42 PIZADA previously
 }
 
-lucid.selectWalletFromPrivateKey(privateKeyBob)
-tx = await lucid.newTx()
-  .collectFrom([binUtxos[0]], Data.to(bobRedeemer, Redeemer))
-  .attachSpendingValidator(liquidityBinScript)
-  .payToContract(liquidityBinAddress, {inline: Data.to(bobDatum, Datum)}, newBinLiquidity)
-  .complete({coinSelection: true})
-console.log("Bob swaps 1000 ADA for 10 PIZADA:")
-console.log(await txRecord(tx, lucid, knownAddresses))
-await sendTx(tx);
-emulator.awaitBlock(4)
+
+try {
+  lucid.selectWalletFromPrivateKey(privateKeyBob)
+  tx = await lucid.newTx()
+    .collectFrom([binUtxos[0]], Data.to(bobRedeemer, Redeemer))
+    .attachSpendingValidator(liquidityBinScript)
+    .payToContract(liquidityBinAddress, {inline: Data.to(bobDatum, Datum)}, newBinLiquidity)
+    .collectFrom([bobUtxos[0]])
+    .complete({coinSelection: false})
+  console.log("Bob swaps 1000 ADA for 10 PIZADA:")
+  console.log(await txRecord(tx, lucid, knownAddresses))
+  await sendTx(tx);
+  emulator.awaitBlock(4)
+} catch (error) {
+  console.log("Failed with error:")
+  console.log(error)
+  throw new Error("You can do it!")
+}

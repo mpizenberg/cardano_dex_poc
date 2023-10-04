@@ -1,3 +1,4 @@
+use aiken/cbor
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/list
 use aiken/transaction.{
@@ -42,18 +43,32 @@ fn valid_liquidity_swap(
   expect Some(Input { output_reference: old_utxo_ref, output: old_utxo }) =
     list.at(context.transaction.inputs, redeemer.index_input)
 
+  let inputs_refs =
+    list.map(context.transaction.inputs, fn(input) { input.output_reference })
+  trace @"Input adresses:"
+  trace cbor.diagnostic(inputs_refs)
+
   // Retrieve the output UTxO at the given index
   expect Some(new_utxo) =
     list.at(context.transaction.outputs, redeemer.index_output)
 
   // Check the old UTxO is the one from the spend purpose of the context
   expect Spend(purpose_utxo_ref) = context.purpose
+  trace @"toto1"
   expect (old_utxo_ref == purpose_utxo_ref)?
   // Check the new UTxO is sent to the swap contract
+  trace @"toto2"
   expect (old_utxo.address == new_utxo.address)?
   // Check the new UTxO reference the old UTxO in its datum (to avoid double satisfaction)
+  trace @"toto3"
   expect InlineDatum(new_inline_datum) = new_utxo.datum
+  trace @"toto4"
+  trace @"new_inline_datum:"
+  trace cbor.diagnostic(new_inline_datum)
+  trace @"purpose datum:"
+  trace cbor.diagnostic(datum)
   expect new_utxo_datum: Datum = new_inline_datum
+  trace @"toto5"
   expect (new_utxo_datum.from_utxo == Some(old_utxo_ref))?
   // Check the new UTxO still has the same owner and swap rate as the old UTxO
   expect (new_utxo_datum.owner == datum.owner)?
