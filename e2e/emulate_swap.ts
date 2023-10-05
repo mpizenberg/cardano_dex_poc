@@ -131,7 +131,7 @@ const aliceHash = lucid.utils.getAddressDetails(aliceAddress)
 
 const aliceDatum: Datum = {
   owner: aliceHash!,
-  swap_rate: [["", "", 100n], [policyId, fromText("PIZADA"), 1n]], // 1 PIZADA = 100 ADA
+  swap_rate: [["", "", 100_000000n], [policyId, fromText("PIZADA"), 1n]], // 1 PIZADA = 100 ADA
   from_utxo: null,
 }
 
@@ -161,7 +161,7 @@ console.log(bobUtxos)
 
 const bobDatum: Datum = {
   owner: aliceHash!,
-  swap_rate: [["", "", 100n], [policyId, fromText("PIZADA"), 1n]], // 1 PIZADA = 100 ADA
+  swap_rate: [["", "", 100_000000n], [policyId, fromText("PIZADA"), 1n]], // 1 PIZADA = 100 ADA
   from_utxo: prevUtxoRef, // Link to previous liquidity bin
 }
 
@@ -180,8 +180,8 @@ const bobRedeemer: Redeemer = {
 }
 
 const newBinLiquidity = {
-  lovelace: 0n + 1000n, // There was 0 ADA previously
-  [unit]: 42n - 10n,    // There was 42 PIZADA previously
+  lovelace: binUtxos[0].assets.lovelace + 1000_000000n,
+  [unit]: binUtxos[0].assets[unit] - 10n,
 }
 
 
