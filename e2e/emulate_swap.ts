@@ -100,7 +100,7 @@ emulator.awaitBlock(4)
 
 const swapItemSchema = Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Integer()])
 const outputRefSchema = Data.Object({
-  transaction_id: Data.Bytes(),
+  transaction_id: Data.Object({hash: Data.Bytes()}),
   output_index: Data.Integer(),
 })
 const DatumSchema = Data.Object({
@@ -151,7 +151,7 @@ console.log("UTxOs in the liquidity bin smart contract:");
 const binUtxos = await lucid.utxosAt(liquidityBinAddress)
 console.log(binUtxos);
 const prevUtxoRef = {
-  transaction_id: binUtxos[0].txHash,
+  transaction_id: {hash: binUtxos[0].txHash},
   output_index: BigInt(binUtxos[0].outputIndex),
 };
 
