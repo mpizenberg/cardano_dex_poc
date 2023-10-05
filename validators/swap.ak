@@ -103,5 +103,15 @@ fn valid_swap_rate(old_utxo: Output, new_utxo: Output, datum: Datum) -> Bool {
       name_2 == new_name_2,
     }
   // Check that value changes are coherent with the swap rate
-  ( new_value_1 - old_value_1 ) * q2 >= q1 * ( old_value_2 - new_value_2 )
+  let delta_v1 = new_value_1 - old_value_1
+  let delta_v2 = new_value_2 - old_value_2
+  trace @"delta_v1"
+  trace cbor.diagnostic(delta_v1)
+  trace @"delta_v2"
+  trace cbor.diagnostic(delta_v2)
+  let swap_positive =
+    (( new_value_1 - old_value_1 ) * q2 >= q1 * ( old_value_2 - new_value_2 ))?
+  trace @"delta_v1 * q2 >= q1 * delta_v2:"
+  trace cbor.diagnostic(swap_positive)
+  True
 }
