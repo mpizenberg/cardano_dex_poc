@@ -83,6 +83,8 @@ fn valid_swap_rate(old_utxo: Output, new_utxo: Output, datum: Datum) -> Bool {
   expect (q1 >= 0)?
   expect (q2 >= 0)?
   // Extract policies and token values from the old and new UTxOs
+  // TODO: Remark that this does not work when Ada is not in the swap pair
+  // as then, there will be 3 different assets.
   expect [
     (old_policy_1, old_name_1, old_value_1),
     (old_policy_2, old_name_2, old_value_2),
