@@ -53,17 +53,17 @@ const unit = policyId + fromText("PIZADA");
 
 // Load the limit order smart contract
 
-const fullLimitOrderValidator = JSON.parse(await Deno.readTextFile("plutus.json")).validators.find(
-  (v) => v.title === "limit_order.full_limit_order"
+const limitOrderValidator = JSON.parse(await Deno.readTextFile("plutus.json")).validators.find(
+  (v) => v.title === "limit_order.limit_order"
 );
 
-const fullLimitOrderScript: SpendingValidator = {
+const limitOrderScript: SpendingValidator = {
   type: "PlutusV2",
-  script: fullLimitOrderValidator.compiledCode,
+  script: limitOrderValidator.compiledCode,
 };
 
-const fullLimitOrderAddress: Address = lucid.utils.validatorToAddress(
-  fullLimitOrderScript,
+const limitOrderAddress: Address = lucid.utils.validatorToAddress(
+  limitOrderScript,
 );
 
 // Define nicknames for known addresses
@@ -71,7 +71,7 @@ const knownAddresses = new Map()
 knownAddresses.set(aliceAddress, "Alice")
 knownAddresses.set(bobAddress, "Bob")
 knownAddresses.set(alwaysMintAddress, "MintContract")
-knownAddresses.set(fullLimitOrderAddress, "FullLimitOrderContract")
+knownAddresses.set(limitOrderAddress, "LimitOrderContract")
 
 // Helper function to submit a transaction
 async function sendTx(tx): Promise<TxHash> {
@@ -93,15 +93,18 @@ emulator.awaitBlock(4)
 // #############################################################################
 // Build the Datum schema
 
-const AssetSchema = Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Integer()])
+const AssetSchema = Data.Tuple([Data.Bytes(), Data.Bytes()])
 const OutputRefSchema = Data.Object({
   transaction_id: Data.Object({hash: Data.Bytes()}),
   output_index: Data.Integer(),
 })
 const DatumSchema = Data.Object({
   owner: Data.Bytes(),
-  sell: AssetSchema,
-  buy: AssetSchema,
+  sell_asset: AssetSchema,
+  buy_asset: AssetSchema,
+  sell_amount: Data.Integer(),
+  buy_amount: Data.Integer(),
+  from_utxo: Data.Nullable(OutputRefSchema),
 })
 
 type Datum = Data.Static<typeof DatumSchema>
@@ -114,6 +117,7 @@ const OutputRefDatum = OutputRefSchema as unknown as OutputRefDatum
 // Build the Redeemer schema
 
 const RedeemerSchema = Data.Object({
+  partial: Data.Boolean(),
   index_input: Data.Integer(),
   index_output: Data.Integer(),
 })
@@ -129,13 +133,16 @@ const aliceHash = lucid.utils.getAddressDetails(aliceAddress)
 
 const aliceDatum: Datum = {
   owner: aliceHash!,
-  sell: [policyId, fromText("PIZADA"), 42n],
-  buy: ["", "", 420_000000n],
+  sell_asset: [policyId, fromText("PIZADA")],
+  buy_asset: ["", ""],
+  sell_amount: 42n,
+  buy_amount: 420_000000n,
+  from_utxo: null,
 }
 
 lucid.selectWalletFromPrivateKey(privateKeyAlice)
 tx = await lucid.newTx()
-  .payToContract(fullLimitOrderAddress, {inline: Data.to(aliceDatum, Datum)}, {[unit]: 42n})
+  .payToContract(limitOrderAddress, {inline: Data.to(aliceDatum, Datum)}, {[unit]: 42n})
   .complete({coinSelection: true})
 console.log("Send 42 PIZADA to the limit order contract:")
 console.log(await txRecord(tx, lucid, knownAddresses))
@@ -143,38 +150,109 @@ await sendTx(tx);
 emulator.awaitBlock(4)
 
 // #############################################################################
-// Bob swaps 420 ADA for 42 PIZADA
+// Bob does a partial swap of 200 ADA for 20 PIZADA
 
 console.log("UTxOs in the limit order smart contract:");
-const orderUtxos = await lucid.utxosAt(fullLimitOrderAddress)
+let orderUtxos = await lucid.utxosAt(limitOrderAddress)
 console.log(orderUtxos);
-const prevUtxoRef = {
+let prevUtxoRef = {
   transaction_id: {hash: orderUtxos[0].txHash},
   output_index: BigInt(orderUtxos[0].outputIndex),
 };
 
 console.log("Bob UTxOs:");
-const bobUtxos = await lucid.utxosAt(bobAddress)
+let bobUtxos = await lucid.utxosAt(bobAddress)
 console.log(bobUtxos)
 
 // Figure out at which index will be the limit order utxo.
 // Input utxo are sorted in a transaction so let's sort all the input utxos.
-const inputUtxos = [orderUtxos[0], bobUtxos[0]]
+let inputUtxos = [orderUtxos[0], bobUtxos[0]]
 inputUtxos.sort((utxo1, utxo2) => 
   utxo1.txHash.localeCompare(utxo2.txHash) + (utxo1.outputIndex - utxo2.outputIndex) / inputUtxos.length
 )
-const limitOrderInputIndex = inputUtxos.findIndex((u) => u === orderUtxos[0])
+let limitOrderInputIndex = inputUtxos.findIndex((u) => u === orderUtxos[0])
 console.log("limitOrderInputIndex:", limitOrderInputIndex)
 
-const bobRedeemer: Redeemer = {
+// Prepare Bob's datum and redeemer for the partial order // 200 ADA for 20 PIZADA
+const new_lovelace_amount = orderUtxos[0].assets.lovelace + 200_000000n
+const new_pizada_amount = orderUtxos[0].assets[unit] - 20n
+
+const bobDatum: Datum = {
+  owner: aliceHash!,
+  sell_asset: [policyId, fromText("PIZADA")],
+  buy_asset: ["", ""],
+  sell_amount: aliceDatum.sell_amount - 20n,
+  buy_amount: aliceDatum.buy_amount - 200_000000n,
+  from_utxo: prevUtxoRef,
+}
+
+let bobRedeemer: Redeemer = {
+  partial: true,
   index_input: BigInt(limitOrderInputIndex),
   index_output: 0n, // The returned UTxO should be the first output
 }
 
-// 420 ADA for 42 PIZADA
-const returnedValues = {
-  lovelace: orderUtxos[0].assets.lovelace + 420_000000n,
-  [unit]: orderUtxos[0].assets[unit] - 42n,
+let returnedValues = {
+  lovelace: new_lovelace_amount,
+  [unit]: new_pizada_amount,
+}
+console.log("returned values:", returnedValues)
+
+try {
+  lucid.selectWalletFromPrivateKey(privateKeyBob)
+  tx = await lucid.newTx()
+    .collectFrom([orderUtxos[0]], Data.to(bobRedeemer, Redeemer))
+    .attachSpendingValidator(limitOrderScript)
+    .payToContract(limitOrderAddress, {inline: Data.to(bobDatum, Datum)}, returnedValues)
+    .collectFrom([bobUtxos[0]])
+    .complete({coinSelection: false})
+  console.log("Bob partial swaps 200 ADA for 20 PIZADA:")
+  console.log(await txRecord(tx, lucid, knownAddresses))
+  await sendTx(tx);
+  emulator.awaitBlock(4)
+} catch (error) {
+  console.log("Failed with error:")
+  console.log(error)
+  throw new Error("You can do it!")
+}
+
+// #############################################################################
+// Bob swaps the rest of the previous partial order (220 ADA for 22 PIZADA)
+
+console.log("UTxOs in the limit order smart contract:");
+orderUtxos = await lucid.utxosAt(limitOrderAddress)
+console.log(orderUtxos);
+prevUtxoRef = {
+  transaction_id: {hash: orderUtxos[0].txHash},
+  output_index: BigInt(orderUtxos[0].outputIndex),
+};
+
+// This time, it's probably the second utxo of Bob and not the first that we want
+// as the first contains barely enough ada to hold the just bought pizada.
+console.log("Bob UTxOs:");
+bobUtxos = await lucid.utxosAt(bobAddress)
+console.log(bobUtxos)
+
+
+// Figure out at which index will be the limit order utxo.
+// Input utxo are sorted in a transaction so let's sort all the input utxos.
+inputUtxos = [orderUtxos[0], bobUtxos[1]]
+inputUtxos.sort((utxo1, utxo2) => 
+  utxo1.txHash.localeCompare(utxo2.txHash) + (utxo1.outputIndex - utxo2.outputIndex) / inputUtxos.length
+)
+limitOrderInputIndex = inputUtxos.findIndex((u) => u === orderUtxos[0])
+console.log("limitOrderInputIndex:", limitOrderInputIndex)
+
+bobRedeemer = {
+  partial: false,
+  index_input: BigInt(limitOrderInputIndex),
+  index_output: 0n, // The returned UTxO should be the first output
+}
+
+// 220 ADA for 22 PIZADA
+returnedValues = {
+  lovelace: orderUtxos[0].assets.lovelace + 220_000000n,
+  [unit]: orderUtxos[0].assets[unit] - 22n,
 }
 
 
@@ -182,11 +260,11 @@ try {
   lucid.selectWalletFromPrivateKey(privateKeyBob)
   tx = await lucid.newTx()
     .collectFrom([orderUtxos[0]], Data.to(bobRedeemer, Redeemer))
-    .attachSpendingValidator(fullLimitOrderScript)
+    .attachSpendingValidator(limitOrderScript)
     .payToAddressWithData(aliceAddress, {inline: Data.to(prevUtxoRef, OutputRefDatum)}, returnedValues)
-    .collectFrom([bobUtxos[0]])
+    .collectFrom([bobUtxos[1]])
     .complete({coinSelection: false})
-  console.log("Bob swaps 420 ADA for 42 PIZADA:")
+  console.log("Bob swaps the rest (220 ADA for 22 PIZADA):")
   console.log(await txRecord(tx, lucid, knownAddresses))
   await sendTx(tx);
   emulator.awaitBlock(4)
